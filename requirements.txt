@@ -1,0 +1,29 @@
+# Agent framework
+langgraph==0.2.14
+langchain==0.2.11
+langchain-core==0.2.38
+
+# Local LLM (same pinned versions validated in Project 3)
+transformers==4.42.3
+torch==2.3.0
+accelerate==0.32.1
+
+# Tools
+requests==2.32.3
+
+# Memory
+redis==5.0.7
+
+# Observability (LangSmith — free tier activates via env vars, no extra
+# package beyond langchain's built-in tracing support)
+
+# Guardrails
+# NOTE: guardrails-ai package not yet added — current validators.py is a
+# regex-based placeholder, not yet using the real Guardrails AI framework.
+# See README Known Gaps.
+
+# Config
+pyyaml==6.0.1
+
+# Testing
+pytest==8.2.0

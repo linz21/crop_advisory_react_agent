@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.DS_Store
+*.ipynb_checkpoints/
+Miniforge*.sh
+Miniconda*.sh
+
+# This project should never have its own data/ folder — Project 3's
+# Chroma index and data live in agri_rag_literature_ga's own repo, not
+# here. A stray data/chroma_db/ appeared once, created accidentally
+# before a working-directory bug was fixed (see README) — this line
+# prevents that from silently happening again.
+data/

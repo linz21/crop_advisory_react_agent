@@ -1,0 +1,73 @@
+project:
+  name: crop-advisory-agent
+  author: Linlin Zhang
+  github: linz21
+
+llm:
+  # Upgraded from Qwen2.5-1.5B-Instruct after empirical testing revealed a
+  # real synthesis failure: the smaller model correctly selected tools and
+  # received genuinely relevant, detailed tool results, but still produced
+  # vague, generic final answers that ignored the specific content in front
+  # of it. Qwen3-4B-Instruct-2507 is a newer-generation model (released
+  # well after Qwen2.5) whose own model card specifically highlights
+  # improvements in "logical reasoning, text comprehension... and tool
+  # usage" — directly relevant to the failure found. This is a same-
+  # family, size-appropriate upgrade (4B vs 1.5B), not a jump to a
+  # fundamentally different model, tested empirically before assuming it
+  # fixes the issue — see README's Results section for actual outcome.
+  model_name: "Qwen/Qwen3-4B-Instruct-2507"
+  max_new_tokens: 512
+  temperature: 0.01
+  # bfloat16 (the model's native release precision) instead of float32 —
+  # at 4B parameters, float32 would need ~16GB just for weights; bfloat16
+  # roughly halves that to ~8GB, safer alongside Project 3's embedding
+  # model also being loaded when search_literature is called.
+  torch_dtype: "bfloat16"
+
+tools:
+  yield_prediction:
+    # Project 1's deployed API. Falls back to a local model path if the
+    # live endpoint is down (see tools/yield_prediction_tool.py).
+    api_url: "http://54.214.151.133:8000/predict"
+    timeout_seconds: 10
+  literature_search:
+    # Project 3's retrieval + generation, called in-process (not over HTTP) —
+    # both projects live in the same Python environment for this agent, so
+    # there's no need for a network hop the way the deployed HF Space needed.
+    project3_path: "../agri_rag_literature_ga"
+    top_k: 5
+
+memory:
+  provider: "redis"
+  # Redis Cloud free tier (30MB, no credit card) — set these via environment
+  # variables, do NOT commit real credentials to this file.
+  host_env_var: "REDIS_HOST"
+  port_env_var: "REDIS_PORT"
+  password_env_var: "REDIS_PASSWORD"
+  session_ttl_seconds: 3600  # conversation memory expires after 1 hour idle
+
+observability:
+  provider: "langsmith"
+  # LangSmith free Developer tier — 5,000 traces/month, 1 seat, no card.
+  # Set via environment variables:
+  #   LANGCHAIN_TRACING_V2=true
+  #   LANGCHAIN_API_KEY=<your key from smith.langchain.com>
+  #   LANGCHAIN_PROJECT=crop-advisory-agent
+  enabled: true
+  project_name: "crop-advisory-agent"
+
+guardrails:
+  # Guardrails AI — open source, free. Validates agent output before
+  # returning to the user (e.g. flagging unsafe/reckless advice, ensuring
+  # structured tool-call outputs are well-formed).
+  enabled: true
+
+agent:
+  max_iterations: 5   # ReAct loop safety limit — prevents infinite tool-call loops
+  system_prompt: >
+    You are a crop advisory assistant for corn farmers. You have access to
+    two tools: a yield prediction model and a research literature search
+    tool. Use these tools to answer questions about corn yield, farming
+    practices, and agronomic research. Always cite which tool(s) informed
+    your answer. If a question is outside corn/agriculture, say so rather
+    than guessing.
