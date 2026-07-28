@@ -13,7 +13,7 @@ citing real sources.
 ```
 User question
         ↓
-Hand-rolled ReAct loop (local Qwen3-4B-Instruct-2507)
+Hand-rolled ReAct loop (local Qwen3-4B, or Anthropic API — see Results)
         ↓                                    ↓
 predict_corn_yield tool              search_literature tool
 (calls Project 1's live API)         (calls Project 3's retriever +
@@ -24,7 +24,9 @@ predict_corn_yield tool              search_literature tool
                         ↓
               Final answer to user
 
-Redis (conversation memory)  ·  LangSmith (reasoning trace observability)
+Redis (short-term, same-session memory)
+Vector store (long-term, cross-session semantic memory)
+LangSmith (reasoning trace observability)
 ```
 
 **Note on the ReAct implementation:** this uses a hand-rolled, classic
@@ -40,7 +42,9 @@ model used successfully in Project 3), but empirical testing showed a real
 synthesis failure — correct tool selection, but vague answers even given
 good, specific tool results. Upgraded to `Qwen3-4B-Instruct-2507`, a newer
 generation with reported improvements in reasoning and tool use, which
-measurably improved synthesis quality — see Results below.
+measurably improved synthesis quality. A further limitation found in both
+local models (see Results) motivated adding the Anthropic API as an
+optional, config-switchable alternative (`llm.provider: "anthropic"`).
 
 ## Setup
 
@@ -66,7 +70,14 @@ export LANGCHAIN_TRACING_V2="true"
 export LANGCHAIN_API_KEY="your-langsmith-key"
 export LANGCHAIN_PROJECT="crop-advisory-agent"
 
-# 5. Run the agent
+# 5. (Optional) Use Anthropic API instead of local model — see Results
+#    for why this is offered as an alternative. Requires a genuine API
+#    key from console.anthropic.com with billing enabled, NOT a Claude
+#    Pro/Max subscription (separate product/billing).
+export ANTHROPIC_API_KEY="sk-ant-..."
+# then set llm.provider: "anthropic" in configs/config.yaml
+
+# 6. Run the agent
 python -m src.agent.react_agent --question "What corn yield should I expect in Illinois next year?"
 ```
 
@@ -84,22 +95,37 @@ python -m src.agent.react_agent --question "What corn yield should I expect in I
 ## Tech Stack
 
 Hand-rolled `ReAct` loop · `transformers` (Qwen3-4B-Instruct-2507, local) ·
-`Redis` (conversation memory) · `LangSmith` (observability) ·
-custom guardrails validation
+optional Anthropic API (Claude Sonnet 4.5) · `Redis` (short-term memory) ·
+`ChromaDB` + `sentence-transformers` (long-term memory) · `LangSmith`
+(observability) · custom guardrails validation
 
 ## Results
 
-Validated through direct testing (single-tool and multi-tool questions,
-verbose transcript inspection):
+Validated through direct testing (single-tool, multi-tool, and multi-turn
+questions, verbose transcript inspection):
 
 | Aspect | Finding |
 |--------|---------|
-| Tool selection | Correct in every test — distinguishes yield questions from research questions reliably |
-| Multi-tool chaining | Works — successfully calls both tools in sequence for questions needing both |
-| Synthesis quality (Qwen3-4B) | Generally good; consistently and correctly flagged when retrieved sources didn't precisely match a question's scope (e.g. sweet corn vs. field corn, Illinois-specific vs. general) across multiple independent tests |
-| Synthesis quality (Qwen2.5-1.5B, earlier) | Correct tool selection, but vague/generic answers even given detailed, relevant tool results — motivated the model upgrade |
-| Citation reliability | Not fully trusted to the model — sources are extracted programmatically from tool output and code-guaranteed in the final answer, since the model was observed to sometimes drop real citations in favor of a vague placeholder |
+| Tool selection | Correct in every test |
+| Multi-tool chaining | Works — calls both tools in sequence when needed |
+| Citation reliability | Not trusted to the model — sources are extracted programmatically from tool output and code-guaranteed in the final answer |
+| Memory infrastructure | Both short-term (Redis) and long-term (vector store) confirmed working end-to-end — data saves and loads correctly |
+| Memory *usage* (local models) | Failed — given real prior context showing no practices were mentioned, both Qwen2.5-1.5B and Qwen3-4B fabricated a false claim that practices had been discussed, and proceeded from that false premise |
+| Tool-failure handling (local models) | Failed — a genuine tool error led to a confidently fabricated answer with an invented citation, instead of reporting the failure |
+| Memory usage + tool-failure handling (Claude Sonnet 4.5) | Succeeded on both, across 3 independent test cases |
 
+**Honest summary:** two reasonable prompt-engineering attempts (different
+wording, different position in the prompt) did not fix either local-model
+failure. Switching to Claude Sonnet 4.5 (same code, same prompts, just a
+different `llm.provider`) resolved both immediately. This suggests the
+failures are a genuine model-capacity limit, not a prompting problem —
+and that for an agent whose answers could inform real farming decisions,
+reliable self-correction may be worth the added API cost over a fully
+free local model. Local models remain the default given cost, with the
+Anthropic path available as a tested, working alternative.
+
+**Not yet tested:** LangSmith trace inspection, Guardrails validation
+against real (not synthetic) agent output, out-of-scope question handling.
 
 ## Project Structure
 
@@ -110,7 +136,9 @@ crop_advisory_agent/
 │   ├── tools/
 │   │   ├── yield_prediction_tool.py   # Calls Project 1's live API
 │   │   └── literature_search_tool.py  # Calls Project 3's retriever, in-process
-│   ├── memory/redis_memory.py         # Conversation history via Redis Cloud
+│   ├── memory/
+│   │   ├── redis_memory.py            # Short-term: same-session history via Redis Cloud
+│   │   └── long_term_memory.py        # Long-term: cross-session semantic search via vector store
 │   ├── observability/langsmith_setup.py  # LangSmith tracing configuration
 │   └── guardrails/validators.py       # Output validation (regex-based starting point)
 ├── tests/test_pipeline.py             # Unit tests, including regression tests for

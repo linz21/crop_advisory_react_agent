@@ -30,6 +30,7 @@ Usage:
 import json
 import logging
 import re
+import uuid
 
 import yaml
 
@@ -72,9 +73,9 @@ IMPORTANT: do NOT include a numbered reference list, citation list, or a
 appends the real, correct source list after your Final Answer — adding your
 own creates confusing duplicate or inconsistent citations. Just write the
 answer itself; sources are handled separately.
-
+{memory_context}
 Begin!
-
+{memory_check_reminder}
 Question: {question}
 Thought:"""
 
@@ -230,18 +231,191 @@ def _extract_sources(observation_text: str) -> list[str]:
     return [s.strip() for s in parts if s.strip()]
 
 
+class AnthropicLLM:
+    """
+    Drop-in alternative to LocalQwenPipeline, using the Anthropic API
+    instead of a local model — same .generate(prompt) interface, so the
+    rest of the ReAct loop code doesn't need to change at all.
+
+    ADDED SPECIFICALLY to test whether a frontier model fixes a real,
+    reproducible limitation found in BOTH Qwen2.5-1.5B and Qwen3-4B: given
+    real prior conversation context showing a previous answer contained
+    ONLY a yield number, both models still fabricated a false claim that
+    the previous answer had mentioned "practices" or "nitrogen timing" —
+    a genuine memory-verification failure that survived two different,
+    reasonable prompt-engineering attempts (see _build_memory_check_
+    reminder's docstring for both failed attempts). This is a real,
+    empirical test of whether that failure is a MODEL CAPABILITY limit
+    (which a frontier model should fix) or something else entirely
+    (which it wouldn't).
+
+    REQUIRES a genuine Anthropic API key from console.anthropic.com with
+    billing enabled — NOT the same as a Claude Pro/Max subscription used
+    for claude.ai or Claude Code, which does not provide API access. This
+    is a separate product with separate billing (same distinction
+    documented in Project 3, which hit this exact confusion originally).
+
+    Usage:
+        export ANTHROPIC_API_KEY="sk-ant-..."
+        # then set llm.provider: "anthropic" in configs/config.yaml
+    """
+
+    def __init__(self, model_name: str = "claude-sonnet-4-5", max_tokens: int = 512):
+        import os
+        import anthropic
+
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY environment variable not set. This requires "
+                "a genuine API key from console.anthropic.com with billing "
+                "enabled — separate from a Claude Pro/Max subscription. "
+                "See README Setup section."
+            )
+
+        self.client = anthropic.Anthropic(api_key=api_key)
+        self.model_name = model_name
+        self.max_tokens = max_tokens
+
+    def generate(self, prompt: str) -> str:
+        """
+        Same signature as LocalQwenPipeline.generate() — takes the full
+        accumulated ReAct transcript as a single string prompt, returns
+        the model's continuation as a string. Uses the Messages API's
+        single-user-turn pattern (the whole ReAct transcript is the
+        "user" content) since our hand-rolled loop manages the actual
+        conversation structure itself via plain text, not the API's
+        multi-turn message format.
+        """
+        response = self.client.messages.create(
+            model=self.model_name,
+            max_tokens=self.max_tokens,
+            temperature=0,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.content[0].text if response.content else ""
+
+
 class ReactAgent:
-    def __init__(self, config_path: str = "configs/config.yaml"):
+    def __init__(self, config_path: str = "configs/config.yaml", session_id: str = None):
         with open(config_path) as f:
             self.cfg = yaml.safe_load(f)
 
-        self.llm = LocalQwenPipeline(
-            model_name=self.cfg["llm"]["model_name"],
-            max_new_tokens=self.cfg["llm"]["max_new_tokens"],
-            torch_dtype=self.cfg["llm"].get("torch_dtype", "float32"),
-        )
+        provider = self.cfg["llm"].get("provider", "local")
+        if provider == "anthropic":
+            self.llm = AnthropicLLM(
+                model_name=self.cfg["llm"].get("anthropic_model", "claude-sonnet-4-5"),
+                max_tokens=self.cfg["llm"]["max_new_tokens"],
+            )
+        else:
+            self.llm = LocalQwenPipeline(
+                model_name=self.cfg["llm"]["model_name"],
+                max_new_tokens=self.cfg["llm"]["max_new_tokens"],
+                torch_dtype=self.cfg["llm"].get("torch_dtype", "float32"),
+            )
         self.max_iterations = self.cfg["agent"]["max_iterations"]
         self.system_prompt = self.cfg["agent"]["system_prompt"]
+
+        # session_id identifies THIS conversation for short-term (Redis)
+        # memory. If not provided, a random one is generated — meaning
+        # short-term history won't carry over between separate ReactAgent
+        # instances unless the same session_id is explicitly reused.
+        self.session_id = session_id or str(uuid.uuid4())
+
+        # Both memory types are OPTIONAL and degrade gracefully — the
+        # agent still works with neither configured (e.g. no REDIS_HOST
+        # set), same pattern as the rest of this project's tools.
+        self._short_term_memory = None
+        self._long_term_memory = None
+
+    def _get_short_term_memory(self):
+        if self._short_term_memory is None:
+            try:
+                from src.memory.redis_memory import SessionMemory
+                ttl = self.cfg["memory"].get("session_ttl_seconds", 3600)
+                self._short_term_memory = SessionMemory(self.session_id, ttl_seconds=ttl)
+            except Exception as e:
+                log.warning(f"Short-term (Redis) memory unavailable: {e}")
+                self._short_term_memory = False  # sentinel: tried and failed, don't retry
+        return self._short_term_memory or None
+
+    def _get_long_term_memory(self):
+        if self._long_term_memory is None:
+            try:
+                from src.memory.long_term_memory import LongTermMemory
+                self._long_term_memory = LongTermMemory()
+            except Exception as e:
+                log.warning(f"Long-term (vector store) memory unavailable: {e}")
+                self._long_term_memory = False
+        return self._long_term_memory or None
+
+    def _build_memory_context(self, question: str) -> str:
+        """
+        Builds the optional memory-context block inserted into the prompt:
+        recent turns from THIS session (short-term, Redis) plus
+        semantically relevant past exchanges from ANY session (long-term,
+        vector store). Returns an empty string if neither is available or
+        neither has anything relevant — the prompt template handles an
+        empty memory_context cleanly (just an extra blank line).
+        """
+        sections = []
+
+        short_term = self._get_short_term_memory()
+        if short_term is not None:
+            history = short_term.get_history()
+            if history:
+                recent = history[-4:]  # last 2 exchanges (user+assistant pairs)
+                lines = [f"{h['role']}: {h['content']}" for h in recent]
+                sections.append(
+                    "Recent conversation in this session:\n" + "\n".join(lines)
+                )
+
+        long_term = self._get_long_term_memory()
+        if long_term is not None:
+            relevant = long_term.search_relevant_history(question, top_k=2)
+            if relevant:
+                lines = [f"- Q: {r['question']}\n  A: {r['answer'][:200]}" for r in relevant]
+                sections.append(
+                    "Potentially relevant past interactions (may be from a "
+                    "different session):\n" + "\n".join(lines)
+                )
+
+        if not sections:
+            return ""
+
+        return "\n" + "\n\n".join(sections) + "\n"
+
+    def _build_memory_check_reminder(self, has_memory_context: bool) -> str:
+        """
+        A second, separate prompt-engineering attempt at the same problem
+        _build_memory_context's instruction was meant to solve — kept as
+        its own function/placeholder specifically to place it IMMEDIATELY
+        adjacent to "Question: {question}", not several paragraphs earlier
+        (a first attempt embedded the instruction inside memory_context,
+        separated from the question by "Begin!" and a blank line — that
+        version was tested and FAILED: the model still fabricated a false
+        claim about what a prior turn contained, despite the instruction
+        being present in the prompt).
+
+        This version: (1) moves the instruction to be the literal last
+        text before the question, testing whether recency effects in a
+        long prompt were the issue, and (2) replaces the abstract "check
+        first" wording with a concrete worked example, since small models
+        often follow concrete examples more reliably than abstract rules.
+        """
+        if not has_memory_context:
+            return ""
+
+        return (
+            "REMINDER: Before answering, look at the conversation history "
+            "above. Example: if it shows a previous question only received "
+            "a yield number with no mention of farming practices, and this "
+            "new question asks about \"the practices mentioned,\" the "
+            "correct response is: \"The previous answer only provided a "
+            "yield number and did not mention specific practices.\" Do not "
+            "invent or assume content that is not actually shown above.\n\n"
+        )
+        return "\n" + "\n\n".join(sections) + "\n"
 
     def run(self, question: str, verbose: bool = True) -> dict:
         """
@@ -261,20 +435,44 @@ class ReactAgent:
                         reasoning rather than just a final result
             iterations: how many tool calls were made
         """
+        memory_context = self._build_memory_context(question)
+        memory_check_reminder = self._build_memory_check_reminder(has_memory_context=bool(memory_context))
         prompt = REACT_PROMPT_TEMPLATE.format(
-            system_prompt=self.system_prompt, question=question
+            system_prompt=self.system_prompt, question=question,
+            memory_context=memory_context, memory_check_reminder=memory_check_reminder,
         )
         full_transcript = prompt
         collected_sources: list[str] = []
 
         def _finalize(answer: str) -> str:
             """Appends a code-guaranteed source list, if any were collected,
-            regardless of whether the model's own answer already included them."""
-            if not collected_sources:
-                return answer
-            unique_sources = list(dict.fromkeys(collected_sources))  # dedupe, preserve order
-            sources_block = "\n".join(f"  - {s}" for s in unique_sources)
-            return f"{answer}\n\nSources consulted:\n{sources_block}"
+            regardless of whether the model's own answer already included
+            them. Also saves this Q&A exchange to both memory stores
+            (best-effort — a memory save failure shouldn't break the
+            actual answer being returned to the user)."""
+            if collected_sources:
+                unique_sources = list(dict.fromkeys(collected_sources))  # dedupe, preserve order
+                sources_block = "\n".join(f"  - {s}" for s in unique_sources)
+                final_text = f"{answer}\n\nSources consulted:\n{sources_block}"
+            else:
+                final_text = answer
+
+            try:
+                short_term = self._get_short_term_memory()
+                if short_term is not None:
+                    short_term.add_message("user", question)
+                    short_term.add_message("assistant", final_text)
+            except Exception as e:
+                log.warning(f"Failed to save to short-term memory: {e}")
+
+            try:
+                long_term = self._get_long_term_memory()
+                if long_term is not None:
+                    long_term.add_interaction(question, final_text, self.session_id)
+            except Exception as e:
+                log.warning(f"Failed to save to long-term memory: {e}")
+
+            return final_text
 
         for i in range(self.max_iterations):
             raw_generated = self.llm.generate(full_transcript)
@@ -340,13 +538,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--question", required=True)
     parser.add_argument("--quiet", action="store_true", help="Suppress per-iteration output")
+    parser.add_argument("--session-id", default=None,
+                        help="Reuse the same session ID across multiple calls to test "
+                             "short-term memory persistence within one conversation")
     args = parser.parse_args()
 
-    agent = ReactAgent()
+    agent = ReactAgent(session_id=args.session_id)
     result = agent.run(args.question, verbose=not args.quiet)
 
     print(f"\n{'='*70}")
     print(f"Q: {args.question}")
+    print(f"Session ID: {agent.session_id}")
     print(f"{'='*70}")
     print(f"\nA: {result['answer']}")
     print(f"\n(Completed in {result['iterations']} iteration(s))")

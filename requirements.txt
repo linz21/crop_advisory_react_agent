@@ -11,8 +11,20 @@ accelerate==0.32.1
 # Tools
 requests==2.32.3
 
+# Anthropic API — OPTIONAL, only needed if llm.provider: "anthropic" in
+# configs/config.yaml. Added specifically to test whether a frontier model
+# fixes a real, reproducible memory-verification failure found in local
+# models. Requires a genuine API key from console.anthropic.com with
+# billing — NOT the same as a Claude Pro/Max subscription. See README.
+anthropic==0.34.0
+
 # Memory
 redis==5.0.7
+
+# Long-term memory (vector store) — general-purpose embeddings, separate
+# from Project 3's domain-specific biomedical model
+sentence-transformers==3.0.1
+chromadb==0.5.3
 
 # Observability (LangSmith — free tier activates via env vars, no extra
 # package beyond langchain's built-in tracing support)

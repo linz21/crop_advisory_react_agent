@@ -4,6 +4,19 @@ project:
   github: linz21
 
 llm:
+  # provider: "local" (default, free) or "anthropic" (paid API, requires
+  # ANTHROPIC_API_KEY — see README Setup). Added "anthropic" as an option
+  # specifically to test whether a frontier model fixes a real,
+  # reproducible failure found in BOTH local models tested so far: given
+  # explicit prior-conversation context showing a previous answer
+  # contained ONLY a yield number, the local models still fabricated a
+  # false claim that the previous answer discussed farming practices —
+  # a failure that survived two different, reasonable prompt-engineering
+  # attempts (see react_agent.py's _build_memory_check_reminder). This is
+  # a genuine empirical test, not an assumption that "bigger/paid = better."
+  provider: "anthropic"
+  anthropic_model: "claude-sonnet-4-5"
+
   # Upgraded from Qwen2.5-1.5B-Instruct after empirical testing revealed a
   # real synthesis failure: the smaller model correctly selected tools and
   # received genuinely relevant, detailed tool results, but still produced

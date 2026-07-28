@@ -39,9 +39,18 @@ class SessionMemory:
                 "REDIS_PORT, REDIS_PASSWORD — see README Setup section."
             )
 
+        # SSL/TLS is NOT universal across Redis Cloud databases — some free-
+        # tier databases use plain (non-TLS) connections by default. The
+        # connection string format is the tell: redis:// (single 's') is
+        # plain, rediss:// (double 's') is TLS. Configurable via
+        # REDIS_USE_SSL rather than hardcoded, since assuming True caused a
+        # real "SSL: WRONG_VERSION_NUMBER" connection failure when tested
+        # against a database that wasn't actually using TLS.
+        use_ssl = os.getenv("REDIS_USE_SSL", "false").lower() == "true"
+
         self.client = redis.Redis(
             host=host, port=port, password=password,
-            decode_responses=True, ssl=True,
+            decode_responses=True, ssl=use_ssl,
         )
         self.key = f"session:{session_id}:history"
         self.ttl_seconds = ttl_seconds
