@@ -11,10 +11,13 @@
 #   conflict hit in the main project.
 
 streamlit==1.38.0
-anthropic==0.34.0
-# Pinned explicitly — an unpinned install resolved to gradio_client 1.3.0
-# (too old for Project 2's Gradio 5.31.0 Space), causing a real
-# "Could not fetch api info: Not Found" error at connection time. 2.6.0
-# confirmed working against the live Space via direct testing.
+# Unpinned deliberately — anthropic==0.34.0 (originally pinned) hardcodes
+# passing a `proxies` argument to httpx internally, which httpx 0.28+
+# removed entirely, causing a real deployment failure: "TypeError:
+# Client.__init__() got an unexpected keyword argument 'proxies'". A
+# well-documented, common issue (anthropic-sdk-python#767). Letting pip
+# resolve the latest anthropic version avoids this, since newer SDK
+# releases handle current httpx correctly.
+anthropic
 gradio_client==2.6.0
 requests==2.32.3
