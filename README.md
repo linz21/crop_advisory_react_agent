@@ -8,7 +8,15 @@ research literature search system (Project 2). The agent reasons about
 which tool(s) a question needs, calls them, and synthesizes a final answer,
 citing real sources.
 
-## Architecture
+## Live Demo
+
+**[crop-advisory-agent.streamlit.app](https://crop-advisory-agent.streamlit.app/)**
+
+This is a deliberately **simplified** public deployment — see
+`streamlit_deploy/` and its own section below for what's different from
+the full local version.
+
+## Architecture (full local version)
 
 ```
 User question
@@ -102,10 +110,12 @@ streamlit run src/frontend/streamlit_app.py     # Terminal 2, opens browser
 ## Tech Stack
 
 Hand-rolled `ReAct` loop · Claude Sonnet 4.5 (default) or `transformers`
-(Qwen3-4B-Instruct-2507, local, optional) · `FastAPI` (serving) ·
-`Streamlit` (chat UI) · `Redis` (short-term memory) · `ChromaDB` +
-`sentence-transformers` (long-term memory) · `LangSmith` (observability,
-manually instrumented — see Results) · real `guardrails-ai` validation
+(Qwen3-4B-Instruct-2507, local, optional) · `FastAPI` (local serving) ·
+`Streamlit` (chat UI, local + Streamlit Cloud) · `Redis` (short-term
+memory) · `ChromaDB` + `sentence-transformers` (long-term memory) ·
+`LangSmith` (observability, manually instrumented — see Results) · real
+`guardrails-ai` validation · `gradio_client` (deployment only — calls
+Project 2's live Space)
 
 ## Results
 
@@ -153,6 +163,45 @@ and multiple question types. No real interaction has triggered a flag
 yet — validated so far against hand-written synthetic triggers in
 `tests/`, not yet against a genuine false/true positive in the wild.
 
+## Streamlit Cloud Deployment (`streamlit_deploy/`)
+
+A separate, self-contained deployment package — same lesson learned
+deploying Project 2 to Hugging Face Spaces: a hosted single-process
+environment can't run two local services (FastAPI + Streamlit) the way
+local dev does, so this is one Streamlit app calling the agent directly
+in-process.
+
+**Deliberately simplified vs. the full local version:**
+- **Anthropic only** — no local model option (not feasible on free-tier
+  hosting; also the more reliable choice per Results above)
+- **No Redis, no LangSmith, no Guardrails** — kept out to minimize the
+  dependency footprint and keep the deployment simple to debug
+- **Literature search calls Project 2's already-deployed HF Space**
+  directly via `gradio_client`, rather than bundling Project 2's entire
+  RAG stack (models, Chroma index, embeddings) into this deployment too
+
+**Real issues found and fixed getting this actually working:**
+- `gradio_client` resolved to an old, incompatible version (1.3.0) by
+  default — the Space runs Gradio 5.31.0, causing a real "Could not fetch
+  api info: Not Found" error. Fixed by pinning `gradio_client==2.6.0`.
+- `Client()`'s auth parameter is `token=`, not `hf_token=`, despite the
+  latter seeming more descriptive — a real, easy mistake caught by testing.
+- Anonymous `gradio_client` connections get a much lower ZeroGPU quota on
+  Project 2's Space — a real test hit "You have exceeded your ZeroGPU
+  quota" after only a couple of calls. Fixed by authenticating with an
+  HF token for a higher quota tier.
+- The remote Space's citation format (`**Sources:**` + numbered list)
+  differs from the local in-process tool's format (comma-separated) —
+  the source-extraction regex needed to handle both, found via a real
+  malformed-output case during testing.
+- `anthropic==0.34.0` hardcodes an `httpx` argument (`proxies`) that
+  `httpx` 0.28+ removed entirely, crashing the deployed app with a
+  `TypeError` at startup — a well-documented, common SDK/dependency
+  version conflict. Fixed by unpinning `anthropic` to let pip resolve a
+  current, compatible release.
+
+See `streamlit_deploy/DEPLOY.md` for full setup steps.
+
 ## Project Structure
 
 ```
@@ -174,6 +223,13 @@ crop_advisory_agent/
 ├── tests/test_pipeline.py             # Unit tests, including regression tests for
 │                                       # real bugs found (e.g. source-citation parsing,
 │                                       # repeated Final Answer blocks)
+├── streamlit_deploy/                  # Self-contained Streamlit Cloud deployment —
+│   ├── app.py                         # SEPARATE from the files above, not imported
+│   ├── agent.py                       # from them (see Streamlit Cloud Deployment
+│   ├── tools.py                       # section above for why). Anthropic-only,
+│   ├── literature_tool_remote.py      # calls Project 2's live Space via gradio_client
+│   ├── requirements.txt               # instead of running its RAG stack in-process.
+│   └── DEPLOY.md
 ├── configs/config.yaml                # All settings — single source of truth
 └── .github/workflows/ci.yml           # Tests on every push
 ```
