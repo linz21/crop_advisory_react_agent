@@ -3,10 +3,15 @@ langgraph==0.2.14
 langchain==0.2.11
 langchain-core==0.2.38
 
-# Local LLM (same pinned versions validated in Project 3)
+# Local LLM (same pinned versions validated in Project 2)
 transformers==4.42.3
 torch==2.3.0
 accelerate==0.32.1
+
+# Serving + UI
+fastapi==0.111.0
+uvicorn==0.30.0
+streamlit==1.38.0
 
 # Tools
 requests==2.32.3
@@ -26,13 +31,29 @@ redis==5.0.7
 sentence-transformers==3.0.1
 chromadb==0.5.3
 
-# Observability (LangSmith — free tier activates via env vars, no extra
-# package beyond langchain's built-in tracing support)
+# Observability (LangSmith). Explicit `langsmith` package needed for the
+# @traceable decorator used in react_agent.py — automatic tracing alone
+# (via env vars) only captured the langchain @tool-decorated functions,
+# NOT the actual hand-rolled ReAct loop or LLM calls (verified empirically:
+# a first test showed only an isolated, disconnected tool-call trace with
+# no reasoning steps or overall run visible). Manual @traceable
+# instrumentation added to fix this — see react_agent.py.
+langsmith
 
-# Guardrails
-# NOTE: guardrails-ai package not yet added — current validators.py is a
-# regex-based placeholder, not yet using the real Guardrails AI framework.
-# See README Known Gaps.
+# Guardrails — real guardrails-ai framework, not a regex placeholder.
+# Custom validators only (see src/guardrails/validators.py) — Hub
+# validators require a separate CLI install + account, not used here.
+#
+# KNOWN, BENIGN VERSION CONFLICT: installing guardrails-ai pulls in
+# langchain-core>=1.0, which conflicts with this project's langchain==
+# 0.2.11/langgraph==0.2.14 (both want langchain-core<0.3.0). pip reports
+# this conflict loudly, but it's benign in practice for this project's
+# actual usage — verified directly: all 16 tests pass, and a full live
+# agent run (tool call + Guardrails validation + memory) completes
+# correctly despite the conflicting version being installed. Left
+# unpinned/unresolved deliberately rather than risk breaking a verified-
+# working setup by forcing a downgrade that isn't actually necessary.
+guardrails-ai
 
 # Config
 pyyaml==6.0.1

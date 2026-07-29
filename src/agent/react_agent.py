@@ -33,6 +33,7 @@ import re
 import uuid
 
 import yaml
+from langsmith import traceable
 
 from src.tools.yield_prediction_tool import predict_corn_yield
 from src.tools.literature_search_tool import search_literature
@@ -128,6 +129,7 @@ class LocalQwenPipeline:
             )
         return LocalQwenPipeline._pipe
 
+    @traceable(run_type="llm", name="local_qwen_generate")
     def generate(self, prompt: str) -> str:
         pipe = self._load()
         return pipe(prompt)[0]["generated_text"]
@@ -277,6 +279,7 @@ class AnthropicLLM:
         self.model_name = model_name
         self.max_tokens = max_tokens
 
+    @traceable(run_type="llm", name="anthropic_generate")
     def generate(self, prompt: str) -> str:
         """
         Same signature as LocalQwenPipeline.generate() — takes the full
@@ -417,6 +420,7 @@ class ReactAgent:
         )
         return "\n" + "\n\n".join(sections) + "\n"
 
+    @traceable(run_type="chain", name="crop_advisory_agent_run")
     def run(self, question: str, verbose: bool = True) -> dict:
         """
         Runs the ReAct loop for a single question.
@@ -471,6 +475,37 @@ class ReactAgent:
                     long_term.add_interaction(question, final_text, self.session_id)
             except Exception as e:
                 log.warning(f"Failed to save to long-term memory: {e}")
+
+            # Guardrails validation — detection + audit logging, NOT
+            # automatic blocking (see build_guard()'s docstring for why:
+            # a false positive silently altering a farmer's answer is its
+            # own risk). Best-effort, same reasoning as memory saves above.
+            #
+            # IMPORTANT: validate the RAW model `answer`, not `final_text`
+            # — final_text includes our OWN code-appended "Sources
+            # consulted:" block, which would otherwise always trip the
+            # self-citation validator's "^Sources?:" pattern on every
+            # single successful answer (a real bug caught while writing
+            # tests, fixed here rather than left in).
+            guardrails_passed, guardrails_issues = True, []
+            try:
+                from src.guardrails.validators import validate_response
+                guardrails_passed, guardrails_issues = validate_response(answer)
+                if not guardrails_passed:
+                    log.warning(f"Guardrails flagged this response: {guardrails_issues}")
+            except Exception as e:
+                log.warning(f"Guardrails validation failed to run: {e}")
+
+            try:
+                from src.guardrails.audit_log import log_interaction
+                log_interaction(
+                    session_id=self.session_id, question=question, answer=final_text,
+                    iterations=i + 1, guardrails_passed=guardrails_passed,
+                    guardrails_issues=guardrails_issues,
+                    llm_provider=self.cfg["llm"].get("provider", "local"),
+                )
+            except Exception as e:
+                log.warning(f"Failed to write audit log: {e}")
 
             return final_text
 

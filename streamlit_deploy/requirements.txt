@@ -1,0 +1,20 @@
+# Trimmed specifically for this deployment. Notably NOT included:
+# - torch/transformers/accelerate: no local model on Streamlit Cloud's
+#   free tier (insufficient RAM/no GPU) — Anthropic API only, and real
+#   testing found local models less reliable anyway (see main README).
+# - chromadb/sentence-transformers: not importing Project 2's RAG stack
+#   in-process — calling its already-deployed HF Space instead via
+#   gradio_client.
+# - langchain: only used for the @tool decorator in the main project;
+#   dropped here in favor of plain function calls, avoiding both the
+#   dependency weight and the real guardrails-ai/langchain-core version
+#   conflict hit in the main project.
+
+streamlit==1.38.0
+anthropic==0.34.0
+# Pinned explicitly — an unpinned install resolved to gradio_client 1.3.0
+# (too old for Project 2's Gradio 5.31.0 Space), causing a real
+# "Could not fetch api info: Not Found" error at connection time. 2.6.0
+# confirmed working against the live Space via direct testing.
+gradio_client==2.6.0
+requests==2.32.3

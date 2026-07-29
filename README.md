@@ -4,7 +4,7 @@
 
 A ReAct-style agent that helps corn farmers by combining two tools built in
 earlier projects: a yield prediction model (Project 1) and an agronomic
-research literature search system (Project 3). The agent reasons about
+research literature search system (Project 2). The agent reasons about
 which tool(s) a question needs, calls them, and synthesizes a final answer,
 citing real sources.
 
@@ -13,10 +13,10 @@ citing real sources.
 ```
 User question
         ↓
-Hand-rolled ReAct loop (local Qwen3-4B, or Anthropic API — see Results)
+Hand-rolled ReAct loop (Claude Sonnet 4.5 default, or local Qwen3-4B — see Results)
         ↓                                    ↓
 predict_corn_yield tool              search_literature tool
-(calls Project 1's live API)         (calls Project 3's retriever +
+(calls Project 1's live API)         (calls Project 2's retriever +
         ↓                             generator, in-process)
         └──────────────┬──────────────────────┘
                         ↓
@@ -38,20 +38,21 @@ with any instruction-following model and gives full visibility into the
 model's raw reasoning — which proved essential for debugging.
 
 **Note on the model:** originally built with `Qwen2.5-1.5B-Instruct` (same
-model used successfully in Project 3), but empirical testing showed a real
+model used successfully in Project 2), but empirical testing showed a real
 synthesis failure — correct tool selection, but vague answers even given
 good, specific tool results. Upgraded to `Qwen3-4B-Instruct-2507`, a newer
 generation with reported improvements in reasoning and tool use, which
-measurably improved synthesis quality. A further limitation found in both
-local models (see Results) motivated adding the Anthropic API as an
-optional, config-switchable alternative (`llm.provider: "anthropic"`).
+measurably improved synthesis quality. Further testing found a real
+reliability gap in both local models (see Results) that motivated adding
+the Anthropic API — now the default provider (`llm.provider: "anthropic"`),
+with `local` remaining fully supported for free/lower-stakes use.
 
 ## Setup
 
 This project depends on both earlier projects being available:
 
 ```bash
-# 1. Clone this repo and Project 3 as SIBLING directories
+# 1. Clone this repo and Project 2 as SIBLING directories
 git clone https://github.com/linz21/crop_advisory_agent.git
 git clone https://github.com/linz21/agri_rag_literature_ga.git
 cd crop_advisory_agent
@@ -70,15 +71,21 @@ export LANGCHAIN_TRACING_V2="true"
 export LANGCHAIN_API_KEY="your-langsmith-key"
 export LANGCHAIN_PROJECT="crop-advisory-agent"
 
-# 5. (Optional) Use Anthropic API instead of local model — see Results
-#    for why this is offered as an alternative. Requires a genuine API
-#    key from console.anthropic.com with billing enabled, NOT a Claude
-#    Pro/Max subscription (separate product/billing).
+# 5. Set up Anthropic API (DEFAULT provider — see Results for why).
+#    Requires a genuine API key from console.anthropic.com with billing
+#    enabled, NOT a Claude Pro/Max subscription (separate product/billing).
 export ANTHROPIC_API_KEY="sk-ant-..."
-# then set llm.provider: "anthropic" in configs/config.yaml
 
-# 6. Run the agent
+# 6. (Optional) To use the free local model instead, set
+#    llm.provider: "local" in configs/config.yaml — no API key needed,
+#    but see Results for known reliability limitations.
+
+# 7. Run the agent
 python -m src.agent.react_agent --question "What corn yield should I expect in Illinois next year?"
+
+# 8. (Optional) Run the full web UI instead of the CLI
+uvicorn src.api.main:app --reload --port 8003   # Terminal 1
+streamlit run src/frontend/streamlit_app.py     # Terminal 2, opens browser
 ```
 
 > **Note:** Project 1's yield prediction tool calls a live AWS EC2 endpoint,
@@ -86,18 +93,19 @@ python -m src.agent.react_agent --question "What corn yield should I expect in I
 > README). The tool handles this gracefully and reports the service as
 > temporarily unavailable rather than crashing.
 >
-> **Shared environment constraint:** this project and Project 3 run in the
-> same Python environment (Project 3's retriever/generator are imported
+> **Shared environment constraint:** this project and Project 2 run in the
+> same Python environment (Project 2's retriever/generator are imported
 > in-process, not called over HTTP). Their dependency versions must stay
 > mutually compatible — currently `torch>=2.6,<2.8` and
 > `transformers>=4.51,<5.0` satisfy both projects' requirements.
 
 ## Tech Stack
 
-Hand-rolled `ReAct` loop · `transformers` (Qwen3-4B-Instruct-2507, local) ·
-optional Anthropic API (Claude Sonnet 4.5) · `Redis` (short-term memory) ·
-`ChromaDB` + `sentence-transformers` (long-term memory) · `LangSmith`
-(observability) · custom guardrails validation
+Hand-rolled `ReAct` loop · Claude Sonnet 4.5 (default) or `transformers`
+(Qwen3-4B-Instruct-2507, local, optional) · `FastAPI` (serving) ·
+`Streamlit` (chat UI) · `Redis` (short-term memory) · `ChromaDB` +
+`sentence-transformers` (long-term memory) · `LangSmith` (observability,
+manually instrumented — see Results) · real `guardrails-ai` validation
 
 ## Results
 
@@ -113,36 +121,59 @@ questions, verbose transcript inspection):
 | Memory *usage* (local models) | Failed — given real prior context showing no practices were mentioned, both Qwen2.5-1.5B and Qwen3-4B fabricated a false claim that practices had been discussed, and proceeded from that false premise |
 | Tool-failure handling (local models) | Failed — a genuine tool error led to a confidently fabricated answer with an invented citation, instead of reporting the failure |
 | Memory usage + tool-failure handling (Claude Sonnet 4.5) | Succeeded on both, across 3 independent test cases |
+| Repeated "Final Answer:" blocks (local models) | Found via real Streamlit UI testing — the local model repeated the same answer 5x in a row with no Thought:/Question: marker between repeats, which an earlier version of the answer-parsing regex didn't catch. Fixed (see `_parse_final_answer`'s docstring); not further debugged beyond this fix, given the decision below. |
 
-**Honest summary:** two reasonable prompt-engineering attempts (different
+**Summary:** two reasonable prompt-engineering attempts (different
 wording, different position in the prompt) did not fix either local-model
-failure. Switching to Claude Sonnet 4.5 (same code, same prompts, just a
-different `llm.provider`) resolved both immediately. This suggests the
-failures are a genuine model-capacity limit, not a prompting problem —
-and that for an agent whose answers could inform real farming decisions,
-reliable self-correction may be worth the added API cost over a fully
-free local model. Local models remain the default given cost, with the
-Anthropic path available as a tested, working alternative.
+fabrication failure. Switching to Claude Sonnet 4.5 (same code, same
+prompts, just a different `llm.provider`) resolved both immediately, and
+performed well in live UI testing. This suggests the failures are a
+genuine model-capacity limit, not a prompting problem. Combined with the
+repetition bug above, **Claude Sonnet 4.5 is now the default provider**
+(`llm.provider: "anthropic"`) despite its cost — reliable self-correction
+matters for an agent whose answers could inform real farming decisions.
+`local` remains fully supported and free for lower-stakes use or further
+experimentation, but further local-model-specific debugging wasn't
+pursued past the fixes already made, given this decision.
 
-**Not yet tested:** LangSmith trace inspection, Guardrails validation
-against real (not synthetic) agent output, out-of-scope question handling.
+**Note on environment variables:** `REDIS_HOST`/`PORT`/`PASSWORD` were
+added to `~/.zshrc` and persist automatically in new terminals.
+`LANGCHAIN_TRACING_V2`/`LANGCHAIN_API_KEY`/`LANGCHAIN_PROJECT` and
+`ANTHROPIC_API_KEY` were only set via `export` and do **not** persist —
+re-export these in any new terminal before running `uvicorn`.
+
+**Out-of-scope handling:** tested directly — a clearly unrelated question
+("What's the best way to train a dog?") was correctly declined without
+calling either tool, with a polite, on-brand redirect rather than a bare
+refusal or a guess.
+
+**Guardrails on real output:** confirmed running on every real agent
+request via the audit log (not silently skipped), across both providers
+and multiple question types. No real interaction has triggered a flag
+yet — validated so far against hand-written synthetic triggers in
+`tests/`, not yet against a genuine false/true positive in the wild.
 
 ## Project Structure
 
 ```
 crop_advisory_agent/
 ├── src/
-│   ├── agent/react_agent.py           # Hand-rolled ReAct loop + local LLM wrapper
+│   ├── agent/react_agent.py           # Hand-rolled ReAct loop; Anthropic (default) or local LLM
 │   ├── tools/
 │   │   ├── yield_prediction_tool.py   # Calls Project 1's live API
-│   │   └── literature_search_tool.py  # Calls Project 3's retriever, in-process
+│   │   └── literature_search_tool.py  # Calls Project 2's retriever, in-process
 │   ├── memory/
 │   │   ├── redis_memory.py            # Short-term: same-session history via Redis Cloud
 │   │   └── long_term_memory.py        # Long-term: cross-session semantic search via vector store
-│   ├── observability/langsmith_setup.py  # LangSmith tracing configuration
-│   └── guardrails/validators.py       # Output validation (regex-based starting point)
+│   ├── observability/langsmith_setup.py  # LangSmith config check
+│   ├── guardrails/
+│   │   ├── validators.py              # Real guardrails-ai custom validators (not a placeholder)
+│   │   └── audit_log.py               # Structured JSONL logging of every interaction
+│   ├── api/main.py                    # FastAPI serving layer
+│   └── frontend/streamlit_app.py      # Streamlit chat UI (calls the FastAPI backend)
 ├── tests/test_pipeline.py             # Unit tests, including regression tests for
-│                                       # real bugs found (e.g. source-citation parsing)
+│                                       # real bugs found (e.g. source-citation parsing,
+│                                       # repeated Final Answer blocks)
 ├── configs/config.yaml                # All settings — single source of truth
 └── .github/workflows/ci.yml           # Tests on every push
 ```

@@ -4,16 +4,17 @@ project:
   github: linz21
 
 llm:
-  # provider: "local" (default, free) or "anthropic" (paid API, requires
-  # ANTHROPIC_API_KEY — see README Setup). Added "anthropic" as an option
-  # specifically to test whether a frontier model fixes a real,
-  # reproducible failure found in BOTH local models tested so far: given
-  # explicit prior-conversation context showing a previous answer
-  # contained ONLY a yield number, the local models still fabricated a
-  # false claim that the previous answer discussed farming practices —
-  # a failure that survived two different, reasonable prompt-engineering
-  # attempts (see react_agent.py's _build_memory_check_reminder). This is
-  # a genuine empirical test, not an assumption that "bigger/paid = better."
+  # provider: "anthropic" (default — see below for why) or "local" (free,
+  # requires no API key). Testing showed a real, reproducible reliability
+  # gap in local models (Qwen2.5-1.5B and Qwen3-4B): both fabricated false
+  # claims about prior conversation turns, and Qwen3-4B additionally
+  # fabricated a confident answer when a tool call genuinely failed,
+  # rather than reporting the failure. Two different prompt-engineering
+  # fixes did not resolve this. Claude Sonnet 4.5 passed all of these same
+  # tests. Given this agent's answers could inform real farming decisions,
+  # "anthropic" is the default despite its cost — "local" remains fully
+  # supported and free, a reasonable choice for lower-stakes use or
+  # further experimentation. See README Results for the full comparison.
   provider: "anthropic"
   anthropic_model: "claude-sonnet-4-5"
 

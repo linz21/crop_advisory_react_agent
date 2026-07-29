@@ -15,3 +15,4 @@ Miniconda*.sh
 # before a working-directory bug was fixed (see README) — this line
 # prevents that from silently happening again.
 data/
+logs/
