@@ -200,7 +200,7 @@ def _parse_final_answer(text: str) -> str | None:
     returned answer.
     """
     match = re.search(
-        r"Final Answer:\s*(.*?)(?:\n\s*Question:|\n\s*Thought:|\Z)",
+        r"Final Answer:\s*(.*?)(?:\n\s*Question:|\n\s*Thought:|\n\s*Final Answer:|\Z)",
         text, re.DOTALL
     )
     return match.group(1).strip() if match else None
