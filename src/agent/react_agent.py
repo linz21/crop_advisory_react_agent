@@ -346,7 +346,11 @@ class ReactAgent:
         if self._long_term_memory is None:
             try:
                 from src.memory.long_term_memory import LongTermMemory
-                self._long_term_memory = LongTermMemory()
+                self._long_term_memory = LongTermMemory(
+                    persist_dir=self.cfg.get("memory", {}).get(
+                        "long_term_persist_dir", "data/long_term_memory"
+                    )
+                )
             except Exception as e:
                 log.warning(f"Long-term (vector store) memory unavailable: {e}")
                 self._long_term_memory = False
