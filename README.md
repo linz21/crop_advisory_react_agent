@@ -3,8 +3,8 @@
 **Author:** Linlin Zhang · [github.com/linz21](https://github.com/linz21)
 
 A ReAct-style agent that helps corn farmers by combining two tools built in
-earlier projects: a yield prediction model (Project 1) and an agronomic
-research literature search system (Project 2). The agent reasons about
+earlier projects: a yield prediction model (Corn Yield Prediction) and an agronomic
+research literature search system (Agricultural RAG System). The agent reasons about
 which tool(s) a question needs, calls them, and synthesizes a final answer,
 citing real sources.
 
@@ -24,7 +24,7 @@ User question
 Hand-rolled ReAct loop (Claude Sonnet 4.5 default, or local Qwen3-4B — see Results)
         ↓                                    ↓
 predict_corn_yield tool              search_literature tool
-(calls Project 1's live API)         (calls Project 2's retriever +
+(calls Corn Yield Prediction's live API)         (calls Agricultural RAG System's retriever +
         ↓                             generator, in-process)
         └──────────────┬──────────────────────┘
                         ↓
@@ -46,7 +46,7 @@ with any instruction-following model and gives full visibility into the
 model's raw reasoning — which proved essential for debugging.
 
 **Note on the model:** originally built with `Qwen2.5-1.5B-Instruct` (same
-model used successfully in Project 2), but empirical testing showed a real
+model used successfully in Agricultural RAG System), but empirical testing showed a real
 synthesis failure — correct tool selection, but vague answers even given
 good, specific tool results. Upgraded to `Qwen3-4B-Instruct-2507`, a newer
 generation with reported improvements in reasoning and tool use, which
@@ -60,7 +60,7 @@ with `local` remaining fully supported for free/lower-stakes use.
 This project depends on both earlier projects being available:
 
 ```bash
-# 1. Clone this repo and Project 2 as SIBLING directories
+# 1. Clone this repo and Agricultural RAG System as SIBLING directories
 git clone https://github.com/linz21/crop_advisory_agent.git
 git clone https://github.com/linz21/agri_rag_literature_ga.git
 cd crop_advisory_agent
@@ -96,13 +96,13 @@ uvicorn src.api.main:app --reload --port 8003   # Terminal 1
 streamlit run src/frontend/streamlit_app.py     # Terminal 2, opens browser
 ```
 
-> **Note:** Project 1's yield prediction tool calls a live AWS EC2 endpoint,
+> **Note:** Corn Yield Prediction's yield prediction tool calls a live AWS EC2 endpoint,
 > which may be paused to manage cloud costs (documented in that project's
 > README). The tool handles this gracefully and reports the service as
 > temporarily unavailable rather than crashing.
 >
-> **Shared environment constraint:** this project and Project 2 run in the
-> same Python environment (Project 2's retriever/generator are imported
+> **Shared environment constraint:** this project and Agricultural RAG System run in the
+> same Python environment (Agricultural RAG System's retriever/generator are imported
 > in-process, not called over HTTP). Their dependency versions must stay
 > mutually compatible — currently `torch>=2.6,<2.8` and
 > `transformers>=4.51,<5.0` satisfy both projects' requirements.
@@ -115,7 +115,7 @@ Hand-rolled `ReAct` loop · Claude Sonnet 4.5 (default) or `transformers`
 memory) · `ChromaDB` + `sentence-transformers` (long-term memory) ·
 `LangSmith` (observability, manually instrumented — see Results) · real
 `guardrails-ai` validation · `gradio_client` (deployment only — calls
-Project 2's live Space)
+Agricultural RAG System's live Space)
 
 ## Results
 
@@ -166,7 +166,7 @@ yet — validated so far against hand-written synthetic triggers in
 ## Streamlit Cloud Deployment (`streamlit_deploy/`)
 
 A separate, self-contained deployment package — same lesson learned
-deploying Project 2 to Hugging Face Spaces: a hosted single-process
+deploying Agricultural RAG System to Hugging Face Spaces: a hosted single-process
 environment can't run two local services (FastAPI + Streamlit) the way
 local dev does, so this is one Streamlit app calling the agent directly
 in-process.
@@ -176,8 +176,8 @@ in-process.
   hosting; also the more reliable choice per Results above)
 - **No Redis, no LangSmith, no Guardrails** — kept out to minimize the
   dependency footprint and keep the deployment simple to debug
-- **Literature search calls Project 2's already-deployed HF Space**
-  directly via `gradio_client`, rather than bundling Project 2's entire
+- **Literature search calls Agricultural RAG System's already-deployed HF Space**
+  directly via `gradio_client`, rather than bundling Agricultural RAG System's entire
   RAG stack (models, Chroma index, embeddings) into this deployment too
 
 **Real issues found and fixed getting this actually working:**
@@ -187,7 +187,7 @@ in-process.
 - `Client()`'s auth parameter is `token=`, not `hf_token=`, despite the
   latter seeming more descriptive — a real, easy mistake caught by testing.
 - Anonymous `gradio_client` connections get a much lower ZeroGPU quota on
-  Project 2's Space — a real test hit "You have exceeded your ZeroGPU
+  Agricultural RAG System's Space — a real test hit "You have exceeded your ZeroGPU
   quota" after only a couple of calls. Fixed by authenticating with an
   HF token for a higher quota tier.
 - The remote Space's citation format (`**Sources:**` + numbered list)
@@ -209,8 +209,8 @@ crop_advisory_agent/
 ├── src/
 │   ├── agent/react_agent.py           # Hand-rolled ReAct loop; Anthropic (default) or local LLM
 │   ├── tools/
-│   │   ├── yield_prediction_tool.py   # Calls Project 1's live API
-│   │   └── literature_search_tool.py  # Calls Project 2's retriever, in-process
+│   │   ├── yield_prediction_tool.py   # Calls Corn Yield Prediction's live API
+│   │   └── literature_search_tool.py  # Calls Agricultural RAG System's retriever, in-process
 │   ├── memory/
 │   │   ├── redis_memory.py            # Short-term: same-session history via Redis Cloud
 │   │   └── long_term_memory.py        # Long-term: cross-session semantic search via vector store
@@ -227,7 +227,7 @@ crop_advisory_agent/
 │   ├── app.py                         # SEPARATE from the files above, not imported
 │   ├── agent.py                       # from them (see Streamlit Cloud Deployment
 │   ├── tools.py                       # section above for why). Anthropic-only,
-│   ├── literature_tool_remote.py      # calls Project 2's live Space via gradio_client
+│   ├── literature_tool_remote.py      # calls Agricultural RAG System's live Space via gradio_client
 │   ├── requirements.txt               # instead of running its RAG stack in-process.
 │   └── DEPLOY.md
 ├── configs/config.yaml                # All settings — single source of truth
