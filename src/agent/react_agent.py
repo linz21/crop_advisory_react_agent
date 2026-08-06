@@ -187,6 +187,31 @@ def _parse_action(text: str) -> tuple[str, dict] | None:
     return action_name, action_input
 
 
+def _truncate_at_first_repeated_line(text: str, min_line_length: int = 40) -> str:
+    """
+    General fix for repeated boilerplate/meta-commentary a local model
+    sometimes generates after its real answer. Found 4 DISTINCT specific
+    patterns empirically (repeated Final Answer blocks, leaked REMINDER
+    text, repeated "END OF RESPONSE..." warnings, repeated "no yield
+    prediction needed" notes) — rather than keep adding new
+    keyword-specific stop-boundaries one at a time as new patterns turn
+    up, this detects ANY substantial line that repeats verbatim and
+    truncates there, catching this whole class of issue generally. Only
+    considers lines >= min_line_length chars, to avoid false positives on
+    short, legitimately-repeated content like bullet points (verified:
+    doesn't truncate a normal answer with a short repeated bullet phrase).
+    """
+    lines = text.split("\n")
+    seen = set()
+    for i, line in enumerate(lines):
+        normalized = line.strip()
+        if len(normalized) >= min_line_length:
+            if normalized in seen:
+                return "\n".join(lines[:i]).rstrip()
+            seen.add(normalized)
+    return text
+
+
 def _parse_final_answer(text: str) -> str | None:
     """
     Extracts the Final Answer text, stopping at the first sign the model
@@ -203,8 +228,9 @@ def _parse_final_answer(text: str) -> str | None:
         r"Final Answer:\s*(.*?)(?:\n\s*Question:|\n\s*Thought:|\n\s*Final Answer:|\n\s*REMINDER:|\Z)",
         text, re.DOTALL
     )
-    return match.group(1).strip() if match else None
-
+    if not match:
+        return None
+    return _truncate_at_first_repeated_line(match.group(1).strip())
 
 def _extract_sources(observation_text: str) -> list[str]:
     """
