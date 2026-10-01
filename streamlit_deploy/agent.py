@@ -137,7 +137,7 @@ class DeployedAgent:
 
     def _generate(self, prompt: str) -> str:
         response = self.client.messages.create(
-            model=self.model_name, max_tokens=512, temperature=0,
+            model=self.model_name, max_tokens=512, 
             messages=[{"role": "user", "content": prompt}],
         )
         return response.content[0].text if response.content else ""
