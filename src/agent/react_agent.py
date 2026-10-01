@@ -288,7 +288,7 @@ class AnthropicLLM:
         # then set llm.provider: "anthropic" in configs/config.yaml
     """
 
-    def __init__(self, model_name: str = "claude-sonnet-5-5", max_tokens: int = 512):
+    def __init__(self, model_name: str = "claude-sonnet-5-5", max_tokens: int = 1024):
         import os
         import anthropic
 
@@ -325,7 +325,7 @@ class AnthropicLLM:
         for block in response.content:
             if block.type == "text":
                 return block.text
-            return ""
+        return ""
 
 
 class ReactAgent:

@@ -143,7 +143,7 @@ class DeployedAgent:
         for block in response.content:
             if block.type == "text":
                 return block.text
-            return ""
+        return ""
 
     def run(self, question: str) -> dict:
         prompt = REACT_PROMPT_TEMPLATE.format(system_prompt=SYSTEM_PROMPT, question=question)
