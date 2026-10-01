@@ -288,7 +288,7 @@ class AnthropicLLM:
         # then set llm.provider: "anthropic" in configs/config.yaml
     """
 
-    def __init__(self, model_name: str = "claude-sonnet-4-5", max_tokens: int = 512):
+    def __init__(self, model_name: str = "claude-sonnet-5-5", max_tokens: int = 512):
         import os
         import anthropic
 
@@ -319,7 +319,7 @@ class AnthropicLLM:
         response = self.client.messages.create(
             model=self.model_name,
             max_tokens=self.max_tokens,
-            temperature=0,
+            output_config={"effort": "low"},   # closest equivalent to temperature=0's determinism
             messages=[{"role": "user", "content": prompt}],
         )
         return response.content[0].text if response.content else ""
@@ -333,7 +333,7 @@ class ReactAgent:
         provider = self.cfg["llm"].get("provider", "local")
         if provider == "anthropic":
             self.llm = AnthropicLLM(
-                model_name=self.cfg["llm"].get("anthropic_model", "claude-sonnet-4-5"),
+                model_name=self.cfg["llm"].get("anthropic_model", "claude-sonnet-5-5"),
                 max_tokens=self.cfg["llm"]["max_new_tokens"],
             )
         else:

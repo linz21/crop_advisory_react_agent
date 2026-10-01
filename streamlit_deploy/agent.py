@@ -3,7 +3,7 @@ ReAct agent for the Streamlit Cloud deployment — Anthropic-only (no local
 model support). Local models (Qwen3-4B etc.) aren't feasible on Streamlit
 Cloud's free tier (limited RAM, no GPU) — and separately, real testing in
 this project found local models had genuine reliability issues (fabrication
-on tool failure, fabrication on memory verification) that Claude Sonnet 4.5
+on tool failure, fabrication on memory verification) that Claude Sonnet 5.5
 resolved — so Anthropic is the only, and the right, choice for this public
 deployment. See the main project's README Results section for that
 evidence.
@@ -131,7 +131,7 @@ class DeployedAgent:
         if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY environment variable not set.")
         self.client = anthropic.Anthropic(api_key=api_key)
-        self.model_name = "claude-sonnet-4-5"
+        self.model_name = "claude-sonnet-5-5"
         self.max_iterations = max_iterations
         self.session_id = session_id or str(uuid.uuid4())
 

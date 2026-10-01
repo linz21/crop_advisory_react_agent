@@ -21,7 +21,7 @@ the full local version.
 ```
 User question
         ↓
-Hand-rolled ReAct loop (Claude Sonnet 4.5 default, or local Qwen3-4B — see Results)
+Hand-rolled ReAct loop (Claude Sonnet 5.5 default, or local Qwen3-4B — see Results)
         ↓                                    ↓
 predict_corn_yield tool              search_literature tool
 (calls Corn Yield Prediction's live API)         (calls Agricultural RAG System's retriever +
@@ -109,7 +109,7 @@ streamlit run src/frontend/streamlit_app.py     # Terminal 2, opens browser
 
 ## Tech Stack
 
-Hand-rolled `ReAct` loop · Claude Sonnet 4.5 (default) or `transformers`
+Hand-rolled `ReAct` loop · Claude Sonnet 5.5 (default) or `transformers`
 (Qwen3-4B-Instruct-2507, local, optional) · `FastAPI` (local serving) ·
 `Streamlit` (chat UI, local + Streamlit Cloud) · `Redis` (short-term
 memory) · `ChromaDB` + `sentence-transformers` (long-term memory) ·
@@ -117,51 +117,6 @@ memory) · `ChromaDB` + `sentence-transformers` (long-term memory) ·
 `guardrails-ai` validation · `gradio_client` (deployment only — calls
 Agricultural RAG System's live Space)
 
-## Results
-
-Validated through direct testing (single-tool, multi-tool, and multi-turn
-questions, verbose transcript inspection):
-
-| Aspect | Finding |
-|--------|---------|
-| Tool selection | Correct in every test |
-| Multi-tool chaining | Works — calls both tools in sequence when needed |
-| Citation reliability | Not trusted to the model — sources are extracted programmatically from tool output and code-guaranteed in the final answer |
-| Memory infrastructure | Both short-term (Redis) and long-term (vector store) confirmed working end-to-end — data saves and loads correctly |
-| Memory *usage* (local models) | Failed — given real prior context showing no practices were mentioned, both Qwen2.5-1.5B and Qwen3-4B fabricated a false claim that practices had been discussed, and proceeded from that false premise |
-| Tool-failure handling (local models) | Failed — a genuine tool error led to a confidently fabricated answer with an invented citation, instead of reporting the failure |
-| Memory usage + tool-failure handling (Claude Sonnet 4.5) | Succeeded on both, across 3 independent test cases |
-| Repeated "Final Answer:" blocks (local models) | Found via real Streamlit UI testing — the local model repeated the same answer 5x in a row with no Thought:/Question: marker between repeats, which an earlier version of the answer-parsing regex didn't catch. Fixed (see `_parse_final_answer`'s docstring); not further debugged beyond this fix, given the decision below. |
-
-**Summary:** two reasonable prompt-engineering attempts (different
-wording, different position in the prompt) did not fix either local-model
-fabrication failure. Switching to Claude Sonnet 4.5 (same code, same
-prompts, just a different `llm.provider`) resolved both immediately, and
-performed well in live UI testing. This suggests the failures are a
-genuine model-capacity limit, not a prompting problem. Combined with the
-repetition bug above, **Claude Sonnet 4.5 is now the default provider**
-(`llm.provider: "anthropic"`) despite its cost — reliable self-correction
-matters for an agent whose answers could inform real farming decisions.
-`local` remains fully supported and free for lower-stakes use or further
-experimentation, but further local-model-specific debugging wasn't
-pursued past the fixes already made, given this decision.
-
-**Note on environment variables:** `REDIS_HOST`/`PORT`/`PASSWORD` were
-added to `~/.zshrc` and persist automatically in new terminals.
-`LANGCHAIN_TRACING_V2`/`LANGCHAIN_API_KEY`/`LANGCHAIN_PROJECT` and
-`ANTHROPIC_API_KEY` were only set via `export` and do **not** persist —
-re-export these in any new terminal before running `uvicorn`.
-
-**Out-of-scope handling:** tested directly — a clearly unrelated question
-("What's the best way to train a dog?") was correctly declined without
-calling either tool, with a polite, on-brand redirect rather than a bare
-refusal or a guess.
-
-**Guardrails on real output:** confirmed running on every real agent
-request via the audit log (not silently skipped), across both providers
-and multiple question types. No real interaction has triggered a flag
-yet — validated so far against hand-written synthetic triggers in
-`tests/`, not yet against a genuine false/true positive in the wild.
 
 ## Streamlit Cloud Deployment (`streamlit_deploy/`)
 

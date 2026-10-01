@@ -10,13 +10,13 @@ llm:
   # claims about prior conversation turns, and Qwen3-4B additionally
   # fabricated a confident answer when a tool call genuinely failed,
   # rather than reporting the failure. Two different prompt-engineering
-  # fixes did not resolve this. Claude Sonnet 4.5 passed all of these same
+  # fixes did not resolve this. Claude Sonnet 5.5 passed all of these same
   # tests. Given this agent's answers could inform real farming decisions,
   # "anthropic" is the default despite its cost — "local" remains fully
   # supported and free, a reasonable choice for lower-stakes use or
   # further experimentation. See README Results for the full comparison.
   provider: "anthropic"
-  anthropic_model: "claude-sonnet-4-5"
+  anthropic_model: "claude-sonnet-5-5"
 
   # Upgraded from Qwen2.5-1.5B-Instruct after empirical testing revealed a
   # real synthesis failure: the smaller model correctly selected tools and

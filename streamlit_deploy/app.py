@@ -18,7 +18,7 @@ st.title("🌽 Crop Advisory Assistant")
 st.caption(
     "Ask about corn yield forecasts or agronomic research. Combines a yield "
     "prediction model and a research literature search tool, powered by "
-    "Claude Sonnet 4.5."
+    "Claude Sonnet 5.5."
 )
 
 if "session_id" not in st.session_state:
@@ -54,7 +54,7 @@ if question:
 
 with st.sidebar:
     st.caption(f"Session ID: `{st.session_state.session_id[:8]}...`")
-    st.caption("Powered by Claude Sonnet 4.5")
+    st.caption("Powered by Claude Sonnet 5.5")
     if st.button("Start new conversation"):
         st.session_state.session_id = str(uuid.uuid4())
         st.session_state.messages = []
