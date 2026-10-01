@@ -12,7 +12,7 @@ citing real sources.
 
 **[crop-advisory-agent.streamlit.app](https://crop-advisory-agent.streamlit.app/)**
 
-This is a deliberately **simplified** public deployment — see
+This is a simplified public deployment — see
 `streamlit_deploy/` and its own section below for what's different from
 the full local version.
 
@@ -134,26 +134,6 @@ in-process.
 - **Literature search calls Agricultural RAG System's already-deployed HF Space**
   directly via `gradio_client`, rather than bundling Agricultural RAG System's entire
   RAG stack (models, Chroma index, embeddings) into this deployment too
-
-**Real issues found and fixed getting this actually working:**
-- `gradio_client` resolved to an old, incompatible version (1.3.0) by
-  default — the Space runs Gradio 5.31.0, causing a real "Could not fetch
-  api info: Not Found" error. Fixed by pinning `gradio_client==2.6.0`.
-- `Client()`'s auth parameter is `token=`, not `hf_token=`, despite the
-  latter seeming more descriptive — a real, easy mistake caught by testing.
-- Anonymous `gradio_client` connections get a much lower ZeroGPU quota on
-  Agricultural RAG System's Space — a real test hit "You have exceeded your ZeroGPU
-  quota" after only a couple of calls. Fixed by authenticating with an
-  HF token for a higher quota tier.
-- The remote Space's citation format (`**Sources:**` + numbered list)
-  differs from the local in-process tool's format (comma-separated) —
-  the source-extraction regex needed to handle both, found via a real
-  malformed-output case during testing.
-- `anthropic==0.34.0` hardcodes an `httpx` argument (`proxies`) that
-  `httpx` 0.28+ removed entirely, crashing the deployed app with a
-  `TypeError` at startup — a well-documented, common SDK/dependency
-  version conflict. Fixed by unpinning `anthropic` to let pip resolve a
-  current, compatible release.
 
 See `streamlit_deploy/DEPLOY.md` for full setup steps.
 
