@@ -322,7 +322,10 @@ class AnthropicLLM:
             output_config={"effort": "low"},   # closest equivalent to temperature=0's determinism
             messages=[{"role": "user", "content": prompt}],
         )
-        return response.content[0].text if response.content else ""
+        for block in response.content:
+            if block.type == "text":
+                return block.text
+            return ""
 
 
 class ReactAgent:

@@ -137,10 +137,13 @@ class DeployedAgent:
 
     def _generate(self, prompt: str) -> str:
         response = self.client.messages.create(
-            model=self.model_name, max_tokens=512, 
+            model=self.model_name, max_tokens=1024, 
             messages=[{"role": "user", "content": prompt}],
         )
-        return response.content[0].text if response.content else ""
+        for block in response.content:
+            if block.type == "text":
+                return block.text
+            return ""
 
     def run(self, question: str) -> dict:
         prompt = REACT_PROMPT_TEMPLATE.format(system_prompt=SYSTEM_PROMPT, question=question)

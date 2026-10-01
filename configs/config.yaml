@@ -30,7 +30,7 @@ llm:
   # fundamentally different model, tested empirically before assuming it
   # fixes the issue — see README's Results section for actual outcome.
   model_name: "Qwen/Qwen3-4B-Instruct-2507"
-  max_new_tokens: 512
+  max_new_tokens: 1024
   temperature: 0.01
   # bfloat16 (the model's native release precision) instead of float32 —
   # at 4B parameters, float32 would need ~16GB just for weights; bfloat16
